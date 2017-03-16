@@ -1,2 +1,4 @@
-ena.etsmtl.ca 119.101.
-ena.etsmtl.ca 49.192.16.192
+facebook.com 31.13.80.36
+amazon.ca 176.32.98.168
+amazon.ca 192.12.0.1
+amazon.ca 0.1.0.0

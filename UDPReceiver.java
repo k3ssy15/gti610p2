@@ -267,16 +267,24 @@ public class UDPReceiver extends Thread {
 							}
 							else	// *Sinon
 							{
-								// *Creer le paquet de reponse a l'aide du UDPAnswerPaquetCreator
-								UDPAnswerPacketCreator reponseInstance = UDPAnswerPacketCreator.getInstance();
-								byte[] reponseByte = reponseInstance.CreateAnswerPacket(paquetRecu.getData(), finder.StartResearch(qName));
+								if( listeAdresse != null)
+								{
+									// *Creer le paquet de reponse a l'aide du UDPAnswerPaquetCreator
+									UDPAnswerPacketCreator reponseInstance = UDPAnswerPacketCreator.getInstance();
+									byte[] reponseByte = reponseInstance.CreateAnswerPacket(paquetRecu.getData(), finder.StartResearch(qName));
+									
+									// *Placer ce paquet dans le socket
+									DatagramPacket paquetDeReponse = new DatagramPacket(reponseByte, reponseByte.length);
+									
+									// *Envoyer le paquet
+									envoieReponse = new UDPSender(getAdrIP().substring(1, getAdrIP().length() ), this.port, serveur);
+									envoieReponse.SendPacketNow(paquetDeReponse);
+								}
+								else
+								{
+									System.out.println("L'adresse IP cherche n'est pas dans le fichier DNSFile");
+								}
 								
-								// *Placer ce paquet dans le socket
-								DatagramPacket paquetDeReponse = new DatagramPacket(reponseByte, reponseByte.length);
-								
-								// *Envoyer le paquet
-								envoieReponse = new UDPSender(getAdrIP(), this.port, serveur);
-								envoieReponse.SendPacketNow(paquetDeReponse);
 							}
 //						}
 //						catch(IndexOutOfBoundsException e)
@@ -379,9 +387,19 @@ public class UDPReceiver extends Thread {
 						}
 						else
 						{
-							if( scanner.nextLine().contains( listeAdresse.get(i).toString() ) )
+							int compteur = 0;
+							while(scanner.hasNextLine())
 							{
-								System.out.println("L'adresse IP existe a cette ligne.");
+								if(scanner.nextLine().contains(listeAdresse.get(i).toString()) )
+								{
+									System.out.println("L'adresse IP existe a cette ligne.");
+									compteur++;
+								}								
+							}
+							if(compteur == 0)
+							{
+								enregistrement.StartRecord(qName, listeAdresse.get(i).toString());
+								System.out.println("L'adresse IP " + listeAdresse.get(i).toString() + " a ete ajoute.");
 							}
 						}
 					}
@@ -389,14 +407,23 @@ public class UDPReceiver extends Thread {
 					// *Faire parvenir le paquet reponse au demandeur original,
 					// ayant emis une requete avec cet identifiant					
 					UDPAnswerPacketCreator reponseInstance = UDPAnswerPacketCreator.getInstance();
-					byte[] reponseByte = reponseInstance.CreateAnswerPacket(paquetRecu.getData(), finder.StartResearch(qName));
 					
-					// *Placer ce paquet dans le socket
-					DatagramPacket paquetDeReponse = new DatagramPacket(reponseByte, reponseByte.length);
-					
-					// *Envoyer le paquet
-					envoieReponse = new UDPSender(getAdrIP(), this.port, serveur);
-					envoieReponse.SendPacketNow(paquetDeReponse);
+					if( listeAdresse != null)
+					{
+						byte[] reponseByte = reponseInstance.CreateAnswerPacket(paquetRecu.getData(), listeAdresse );
+						System.out.println("Reponse Byte : " + reponseByte);
+						
+						// *Placer ce paquet dans le socket
+						DatagramPacket paquetDeReponse = new DatagramPacket(reponseByte, reponseByte.length);
+						
+						// *Envoyer le paquet
+						envoieReponse = new UDPSender(getAdrIP().substring(1, getAdrIP().length()), this.port, serveur);
+						envoieReponse.SendPacketNow(paquetDeReponse);
+					}
+					else
+					{
+						System.out.println("L'adresse IP cherche n'est pas dans le fichier DNSFile");
+					}
 				}
 				
 				qName = "";
