@@ -1,5 +1,6 @@
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -133,9 +134,26 @@ public class UDPReceiver extends Thread {
 			
 			UDPSender redirection;
 			
-			String adresseIPDuFichierDNS;
+			String adresseIPDuFichierDNS = null;			
+
+			QueryFinder finder = new QueryFinder(DNSFile);
 			
 			UDPSender envoieReponse;
+			
+			int reponseType = 0;
+			int reponseClasse = 0;
+			
+			int reponseIP = 0;
+			
+			String anCount = "";
+			
+			ArrayList<String> listeAdresse = new ArrayList();
+			
+			AnswerRecorder enregistrement = new AnswerRecorder(DNSFile);
+			
+			Scanner scanner;
+			
+			ArrayList<String> listeDNS = new ArrayList();
 			
 			// *Boucle infinie de reception
 			while (!this.stop) {
@@ -163,14 +181,15 @@ public class UDPReceiver extends Thread {
 				// https://docs.oracle.com/javase/7/docs/api/java/util/Formatter.html#syntax
 				for (byte octet : paquetRecu.getData()) 
 				{
-					String ligneBinaire = String.format("%8s", Integer.toBinaryString(octet & 0xFF) ).replaceAll("\\s+", "");
+					// Remplace les espaces par des 0 car il prend certain 0 pour des espaces
+					String ligneBinaire = String.format("%8s", Integer.toBinaryString(octet & 0xFF) ).replaceAll(" ", "0");
 					paquetRecuString += ligneBinaire;
 				}
 				
-				System.out.println(paquetRecuString);
+				System.out.println("String de bits du paquet recu : " + paquetRecuString);
 				
 				//https://docs.oracle.com/javase/7/docs/api/java/lang/Integer.html#parseInt(java.lang.String,%20int)
-				qr = Integer.parseInt(paquetRecuString.substring(16,17),2);
+				qr = Integer.parseInt(paquetRecuString.substring(16, 17), 2);
 				
 				// ****** Dans le cas d'un paquet requete *****
 				if(qr == 0)
@@ -182,7 +201,7 @@ public class UDPReceiver extends Thread {
 					{
 						if(buff[i] != 0)
 						{
-							System.out.println((int)Character.toChars( buff[i] )[0]);
+//							System.out.println((int)Character.toChars( buff[i] )[0]);
 
 							// *Sauvegarde du Query Domain name
 							if( (int)Character.toChars( buff[i] )[0] > 20)
@@ -192,15 +211,17 @@ public class UDPReceiver extends Thread {
 							else
 							{
 								qName += ".";
+								finDeQname++;
 							}						
 						}
 						else
 						{
-							finDeQname = i;
+							finDeQname += i;
 							break;
 						}
 					}
 					System.out.println("QNAME : " + qName);
+					System.out.println("La fin de QNAME : " + finDeQname);
 					
 					// *Sauvegarde de l'adresse, du port et de l'identifiant de la requete
 					// http://download.java.net/jdk7/archive/b123/docs/api/java/net/InetAddress.html
@@ -210,7 +231,7 @@ public class UDPReceiver extends Thread {
 					System.out.println("L'adresse IP : " + getAdrIP() );
 					System.out.println("Le port : " + this.port);
 					
-					identifiant = Integer.parseInt(paquetRecuString.substring(0,15),2);
+					identifiant = Integer.parseInt(paquetRecuString.substring(0, 16), 2);
 					
 					System.out.println("L'identifiant est : " + identifiant);
 
@@ -225,14 +246,20 @@ public class UDPReceiver extends Thread {
 					{
 						// *Rechercher l'adresse IP associe au Query Domain name					
 						// dans le fichier de correspondance de ce serveur
-						QueryFinder finder = new QueryFinder(DNSFile);
-						try
+//						try
+//						{
+						if(finder.StartResearch(qName).size() != 0)
 						{
 							adresseIPDuFichierDNS = finder.StartResearch(qName).get(0);
-							System.out.println(adresseIPDuFichierDNS);
+							System.out.println("Ajout de l'adresse IP : " + adresseIPDuFichierDNS);
+						}
+						else
+						{
+							System.out.println("Le fichier est vide!");
+						}
 							
 							// *Si la correspondance n'est pas trouvee
-							if( !(adresseIPDuFichierDNS.equals(null)) )
+							if( adresseIPDuFichierDNS == null )
 							{
 								// *Rediriger le paquet vers le serveur DNS
 								redirection = new UDPSender(SERVER_DNS, portRedirect, serveur);
@@ -251,44 +278,123 @@ public class UDPReceiver extends Thread {
 								envoieReponse = new UDPSender(getAdrIP(), this.port, serveur);
 								envoieReponse.SendPacketNow(paquetDeReponse);
 							}
-						}
-						catch(IndexOutOfBoundsException e)
+//						}
+//						catch(IndexOutOfBoundsException e)
+//						{
+//							System.out.println("Le fichier est vide!");
+//						}						
+					}
+				}
+				else if (qr == 1)	// ****** Dans le cas d'un paquet reponse *****
+				{
+					// *Lecture du Query Domain name, a partir du 13ieme octet
+					for(int i = 13; i <= buff.length; i++)
+					{
+						if(buff[i] != 0)
 						{
-							System.out.println("Le fichier est vide!");
+//							System.out.println((int)Character.toChars( buff[i] )[0]);
+
+							if( (int)Character.toChars( buff[i] )[0] > 20)
+							{
+								qName += Character.toChars( buff[i] )[0];
+							}
+							else
+							{
+								qName += ".";
+								finDeQname++;
+							}						
 						}
-								
-						
+						else
+						{
+							finDeQname += i;
+							break;
+						}
 					}
 					
+					System.out.println("QNAME : " + qName);
+					System.out.println("Fin de QUNAME : " + finDeQname);
 					
+					// *Passe par dessus Type et Class
+					// TODO si on en a de besoin
+//					int bitReponseType = (finDeQname * 8) + (6 * 8);
+//					reponseType = Integer.parseInt(paquetRecuString.substring(bitReponseType, bitReponseType + 16), 2);
+//					System.out.println("Type de la réponse : " + reponseType);
+//					
+//					int bitReponseClasse = (finDeQname * 8) + (8 * 8);
+//					reponseClasse = Integer.parseInt(paquetRecuString.substring(bitReponseClasse, bitReponseClasse + 16), 2);
+//					System.out.println("Classe de la réponse : " + reponseClasse);
+					
+					// *Passe par dessus les premiers champs du ressource record
+					// pour arriver au ressource data qui contient l'adresse IP associe
+					//  au hostname (dans le fond saut de 16 bytes)
+					int bitReponseIP = finDeQname + (16 * 8);
+					
+					// *Capture de ou des adresse(s) IP (ANCOUNT est le nombre
+					// de reponses retournees)
+					anCount = paquetRecuString.substring(48, 64);
+					System.out.println("ANCOUNT de la réponse : "+ Integer.parseInt(anCount, 2));
+					
+					
+					
+					for(int i = 0 ; i < Integer.parseInt(anCount, 2); i++)
+					{
+						String adresseIP = "";
 						
+						// (16 * 8) = position en bits du début de l'adresse IP
+						// (4 * 8) = position en bit de la fin de l'adresse IP
+						// (i * 8 * 4) = c'est pour indiquer qu'on saute à la prochaine adresse IP dès que le ANCOUNT augmente
+						for(int j = finDeQname + 16 + (i * 4); j < finDeQname + 16 + 4 + (i * 4); j++)							
+						{
+							System.out.println("J : " + j);
+							
+//							System.out.println( (int)Character.toChars( buff[j] )[0] );
+
+							adresseIP += Byte.toString(buff[j]);
+							adresseIP += ".";
+							
+							System.out.println("Adresse IP : " + adresseIP);
+							
+							listeAdresse.add(adresseIP);
+							System.out.println(listeAdresse.get(i));
+						}
+					}
+
+					// *Ajouter la ou les correspondance(s) dans le fichier DNS
+					// si elles ne y sont pas deja
+					scanner = new Scanner(new FileReader(DNSFile));
 					
+					for (int i = 0; i < Integer.parseInt(anCount); i++) 
+					{
+						while (scanner.hasNextLine()) 
+						{
+							if( scanner.nextLine().contains( listeAdresse.get(i).toString() ) )
+							{
+								System.out.println("L'adresse IP existe deja et ne sera pas ajoute a nouveau.");
+							}
+							else
+							{
+								enregistrement.StartRecord(qName, listeAdresse.get(i).toString());
+								System.out.println("L'adresse IP " + listeAdresse.get(i).toString() + " a ete ajoute.");
+							}
+						}
+					}
 					
-						
+					// *Faire parvenir le paquet reponse au demandeur original,
+					// ayant emis une requete avec cet identifiant					
+					UDPAnswerPacketCreator reponseInstance = UDPAnswerPacketCreator.getInstance();
+					byte[] reponseByte = reponseInstance.CreateAnswerPacket(paquetRecu.getData(), finder.StartResearch(qName));
 					
+					// *Placer ce paquet dans le socket
+					DatagramPacket paquetDeReponse = new DatagramPacket(reponseByte, reponseByte.length);
+					
+					// *Envoyer le paquet
+					envoieReponse = new UDPSender(getAdrIP(), this.port, serveur);
+					envoieReponse.SendPacketNow(paquetDeReponse);
 				}
 				
-				// ****** Dans le cas d'un paquet reponse *****
-						// *Lecture du Query Domain name, a partir du 13 byte
-						
-						// *Passe par dessus Type et Class
-						
-						// *Passe par dessus les premiers champs du ressource record
-						// pour arriver au ressource data qui contient l'adresse IP associe
-						//  au hostname (dans le fond saut de 16 bytes)
-						
-						// *Capture de ou des adresse(s) IP (ANCOUNT est le nombre
-						// de rï¿½ponses retournï¿½es)			
-					
-						// *Ajouter la ou les correspondance(s) dans le fichier DNS
-						// si elles ne y sont pas deja
-						
-						// *Faire parvenir le paquet reponse au demandeur original,
-						// ayant emis une requete avec cet identifiant				
-						// *Placer ce paquet dans le socket
-						// *Envoyer le paquet
-				
 				qName = "";
+				finDeQname = 0;
+				paquetRecuString = "";
 			}
 //			serveur.close(); //closing server
 		} catch (Exception e) {
