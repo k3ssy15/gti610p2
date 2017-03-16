@@ -348,33 +348,40 @@ public class UDPReceiver extends Thread {
 							System.out.println("J : " + j);
 							
 //							System.out.println( (int)Character.toChars( buff[j] )[0] );
-
-							adresseIP += Byte.toString(buff[j]);
-							adresseIP += ".";
 							
-							System.out.println("Adresse IP : " + adresseIP);
+//							adresseIP += Integer.parseInt(Byte.toString(buff[j]));
+							byte[] bytes = Byte.toString(buff[j]).getBytes();
+							adresseIP += Integer.parseInt(paquetRecuString.substring(j * 8, (j + 1) * 8), 2);
+							if( j != ( finDeQname + 16 + 3 + (i * 4) ) )
+							{
+								adresseIP += ".";
+							}
 							
-							listeAdresse.add(adresseIP);
-							System.out.println(listeAdresse.get(i));
+							System.out.println("Adresse IP : " + adresseIP);							
 						}
+						
+						listeAdresse.add(adresseIP);
+						System.out.println("Adresse IP dans la liste : " + listeAdresse.get(i));
 					}
 
 					// *Ajouter la ou les correspondance(s) dans le fichier DNS
 					// si elles ne y sont pas deja
 					scanner = new Scanner(new FileReader(DNSFile));
 					
-					for (int i = 0; i < Integer.parseInt(anCount); i++) 
+					for (int i = 0; i < Integer.parseInt(anCount, 2); i++) 
 					{
-						while (scanner.hasNextLine()) 
+						System.out.println("Démarrage du scan...");
+						
+						if(!scanner.hasNextLine())
+						{
+							enregistrement.StartRecord(qName, listeAdresse.get(i).toString());
+							System.out.println("L'adresse IP " + listeAdresse.get(i).toString() + " a ete ajoute.");
+						}
+						else
 						{
 							if( scanner.nextLine().contains( listeAdresse.get(i).toString() ) )
 							{
-								System.out.println("L'adresse IP existe deja et ne sera pas ajoute a nouveau.");
-							}
-							else
-							{
-								enregistrement.StartRecord(qName, listeAdresse.get(i).toString());
-								System.out.println("L'adresse IP " + listeAdresse.get(i).toString() + " a ete ajoute.");
+								System.out.println("L'adresse IP existe a cette ligne.");
 							}
 						}
 					}
