@@ -3,10 +3,14 @@ import java.io.DataInputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Scanner;
+
+import javax.print.attribute.standard.PrinterLocation;
 
 /**
  * Cette classe permet la reception d'un paquet UDP sur le port de reception
@@ -83,7 +87,6 @@ public class UDPReceiver extends Thread {
 		this.port = Port;
 	}
 	
-	
 	public void setport(int p) {
 		this.port = p;
 	}
@@ -111,9 +114,7 @@ public class UDPReceiver extends Thread {
 	public void setSERVER_DNS(String server_dns) {
 		this.SERVER_DNS = server_dns;
 	}
-
-
-
+	
 	public void setDNSFile(String filename) {
 		DNSFile = filename;
 	}
@@ -122,6 +123,19 @@ public class UDPReceiver extends Thread {
 		try {
 			DatagramSocket serveur = new DatagramSocket(this.port); // *Creation d'un socket UDP
 		
+			int qr = 0;
+			String paquetRecuString = "";
+			
+			String qName = "";
+			int finDeQname = 0;
+			
+			int identifiant = 0;
+			
+			UDPSender redirection;
+			
+			String adresseIPDuFichierDNS;
+			
+			UDPSender envoieReponse;
 			
 			// *Boucle infinie de reception
 			while (!this.stop) {
@@ -142,36 +156,117 @@ public class UDPReceiver extends Thread {
 				// *Creation d'un DataInputStream ou ByteArrayInputStream pour
 				// manipuler les bytes du paquet
 
-				ByteArrayInputStream TabInputStream = new ByteArrayInputStream (paquetRecu.getData());
-				System.out.println(buff.toString());
+				ByteArrayInputStream tabInputStream = new ByteArrayInputStream (paquetRecu.getData() );
+				System.out.println(buff.toString() );
+				
+				// Pour trouver le QR.
+				// https://docs.oracle.com/javase/7/docs/api/java/util/Formatter.html#syntax
+				for (byte octet : paquetRecu.getData()) 
+				{
+					String ligneBinaire = String.format("%8s", Integer.toBinaryString(octet & 0xFF) ).replaceAll("\\s+", "");
+					paquetRecuString += ligneBinaire;
+				}
+				
+				System.out.println(paquetRecuString);
+				
+				//https://docs.oracle.com/javase/7/docs/api/java/lang/Integer.html#parseInt(java.lang.String,%20int)
+				qr = Integer.parseInt(paquetRecuString.substring(16,17),2);
 				
 				// ****** Dans le cas d'un paquet requete *****
-				
-				TabInputStream.skip(2);
-				System.out.println("valeur :  " +TabInputStream.read(buff,3,buff.length));
-				System.out.println("valeur :  " +TabInputStream.read(buff,3,buff.length));
-				
-				
-				
-
+				if(qr == 0)
+				{
 					// *Lecture du Query Domain name, a partir du 13 bytes
+					// On trouve aussi la fin de QNAME
+					// pour trouver les adresses IP plus tard
+					for(int i = 13; i <= buff.length; i++)
+					{
+						if(buff[i] != 0)
+						{
+							System.out.println((int)Character.toChars( buff[i] )[0]);
 
-					// *Sauvegarde du Query Domain name
+							// *Sauvegarde du Query Domain name
+							if( (int)Character.toChars( buff[i] )[0] > 20)
+							{
+								qName += Character.toChars( buff[i] )[0];
+							}
+							else
+							{
+								qName += ".";
+							}						
+						}
+						else
+						{
+							finDeQname = i;
+							break;
+						}
+					}
+					System.out.println("QNAME : " + qName);
 					
 					// *Sauvegarde de l'adresse, du port et de l'identifiant de la requete
+					// http://download.java.net/jdk7/archive/b123/docs/api/java/net/InetAddress.html
+					this.setAdrIP(clientIP.toString() );
+					this.setport(clientPort);
+					
+					System.out.println("L'adresse IP : " + getAdrIP() );
+					System.out.println("Le port : " + this.port);
+					
+					identifiant = Integer.parseInt(paquetRecuString.substring(0,15),2);
+					
+					System.out.println("L'identifiant est : " + identifiant);
 
 					// *Si le mode est redirection seulement
+					if(RedirectionSeulement)
+					{
 						// *Rediriger le paquet vers le serveur DNS
-					// *Sinon
-						// *Rechercher l'adresse IP associe au Query Domain name
-						// dans le fichier de correspondance de ce serveur					
-
-						// *Si la correspondance n'est pas trouvee
-							// *Rediriger le paquet vers le serveur DNS
-						// *Sinon	
-							// *Creer le paquet de reponse a l'aide du UDPAnswerPaquetCreator
-							// *Placer ce paquet dans le socket
-							// *Envoyer le paquet
+						redirection = new UDPSender(SERVER_DNS, portRedirect, serveur);
+						redirection.SendPacketNow(paquetRecu);						
+					}
+					else   // *Sinon
+					{
+						// *Rechercher l'adresse IP associe au Query Domain name					
+						// dans le fichier de correspondance de ce serveur
+						QueryFinder finder = new QueryFinder(DNSFile);
+						try
+						{
+							adresseIPDuFichierDNS = finder.StartResearch(qName).get(0);
+							System.out.println(adresseIPDuFichierDNS);
+							
+							// *Si la correspondance n'est pas trouvee
+							if( !(adresseIPDuFichierDNS.equals(null)) )
+							{
+								// *Rediriger le paquet vers le serveur DNS
+								redirection = new UDPSender(SERVER_DNS, portRedirect, serveur);
+								redirection.SendPacketNow(paquetRecu);
+							}
+							else	// *Sinon
+							{
+								// *Creer le paquet de reponse a l'aide du UDPAnswerPaquetCreator
+								UDPAnswerPacketCreator reponseInstance = UDPAnswerPacketCreator.getInstance();
+								byte[] reponseByte = reponseInstance.CreateAnswerPacket(paquetRecu.getData(), finder.StartResearch(qName));
+								
+								// *Placer ce paquet dans le socket
+								DatagramPacket paquetDeReponse = new DatagramPacket(reponseByte, reponseByte.length);
+								
+								// *Envoyer le paquet
+								envoieReponse = new UDPSender(getAdrIP(), this.port, serveur);
+								envoieReponse.SendPacketNow(paquetDeReponse);
+							}
+						}
+						catch(IndexOutOfBoundsException e)
+						{
+							System.out.println("Le fichier est vide!");
+						}
+								
+						
+					}
+					
+					
+						
+					
+					
+						
+					
+				}
 				
 				// ****** Dans le cas d'un paquet reponse *****
 						// *Lecture du Query Domain name, a partir du 13 byte
@@ -192,6 +287,8 @@ public class UDPReceiver extends Thread {
 						// ayant emis une requete avec cet identifiant				
 						// *Placer ce paquet dans le socket
 						// *Envoyer le paquet
+				
+				qName = "";
 			}
 //			serveur.close(); //closing server
 		} catch (Exception e) {

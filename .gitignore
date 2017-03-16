@@ -45,3 +45,12 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
+/AnswerRecorder.class
+/QueryFinder.class
+/ServeurDNS.class
+/UDPAnswerPacketCreator$Answerpacket.class
+/UDPAnswerPacketCreator$SingletonHolder.class
+/UDPAnswerPacketCreator.class
+/UDPReceiver$ClientInfo.class
+/UDPReceiver.class
+/UDPSender.class
